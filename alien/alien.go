@@ -59,9 +59,7 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 						return
 					}
 					landingindex := rand.Intn(totalcities)
-					fmt.Print(totalcities, landingindex, "\n")
 					landingcity = (*citylist)[landingindex]
-					fmt.Printf("Alien: %v, current city is %v\n", alien.Index, alien.Currentcity)
 					mutex.Unlock()
 				} else {
 					citiesToMove := make([]string, 0)
@@ -70,7 +68,6 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 							citiesToMove = append(citiesToMove, city)
 						}
 					}
-					fmt.Printf("Alien: %v, cities to move %v, current city: %v\n", alien.Index, citiesToMove, alien.Currentcity)
 					var landingindex int
 					if len(citiesToMove) == 0 {
 						SetState(*alienlist, 2, alien.Index)
@@ -101,7 +98,6 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 					(*simulation)[landingcity] = append((*simulation)[landingcity], alien.Index)
 					alien.Totalmoves += 1
 					alien.Currentcity = landingcity
-					fmt.Printf("Alien: %v, current city is %v\n", alien.Index, alien.Currentcity)
 				} else {
 					for i, a := range *alienlist {
 						if a.Index == (*simulation)[landingcity][0] {
