@@ -28,16 +28,16 @@ const (
 
 func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *citymap.SimulationTrack, citylist *citymap.CityList, alienlist *[]*Alien, wg *sync.WaitGroup, mutex *sync.RWMutex) {
 	defer wg.Done()
-	state := Paused // Begin in the paused state.
+	state := Running // Begin in the running state.
 	for {
 		select {
 		case state = <-alien.Ws:
 			switch state {
 			case Stopped:
 				alien.mu.Lock()
-				defer alien.mu.Unlock()
 				close(alien.Ws)
 				alien.Destroyed = true
+				alien.mu.Unlock()
 				return
 			}
 		default:
@@ -47,17 +47,22 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 			}
 
 			for {
-				totalcities := len(*citylist)
+				SetState(*alienlist, 1, alien.Index)
 				rand.Seed(time.Now().UnixNano())
+				landingcity := ""
 				if alien.Totalmoves == 0 && alien.Currentcity == "" {
-					landingindex := rand.Intn(totalcities)
-					landingcity := (*citylist)[landingindex]
-					if len((*simulation)[landingcity]) < 2 {
-						(*simulation)[landingcity] = append((*simulation)[landingcity], alien.Index)
-						alien.Totalmoves += 1
-						alien.Currentcity = landingcity
-						fmt.Printf("Alien: %v, current city is %v\n", alien.Index, alien.Currentcity)
+					mutex.Lock()
+					totalcities := len(*citylist)
+					if totalcities == 0 {
+						SetState(*alienlist, 2, alien.Index)
+						mutex.Unlock()
+						return
 					}
+					landingindex := rand.Intn(totalcities)
+					fmt.Print(totalcities, landingindex, "\n")
+					landingcity = (*citylist)[landingindex]
+					fmt.Printf("Alien: %v, current city is %v\n", alien.Index, alien.Currentcity)
+					mutex.Unlock()
 				} else {
 					citiesToMove := make([]string, 0)
 					for _, city := range (*worldmap)[alien.Currentcity] {
@@ -68,67 +73,62 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 					fmt.Printf("Alien: %v, cities to move %v, current city: %v\n", alien.Index, citiesToMove, alien.Currentcity)
 					var landingindex int
 					if len(citiesToMove) == 0 {
+						SetState(*alienlist, 2, alien.Index)
 						return
 					} else {
 						landingindex = rand.Intn(len(citiesToMove))
 					}
-					landingcity := citiesToMove[landingindex]
-					if len((*simulation)[landingcity]) < 1 {
-						alien.mu.Lock()
-						SetState(*alienlist, 1)
-						if len((*simulation)[alien.Currentcity]) == 1 && (*simulation)[alien.Currentcity][0] == alien.Index {
-							mutex.Lock()
-							(*simulation)[alien.Currentcity] = make([]int, 0)
-							mutex.Unlock()
-						}
-						if alien.Totalmoves > 10000 {
-							alien.Destroyed = true
-							for i, a := range *alienlist {
-								if a.Index == alien.Index {
-									*alienlist = append((*alienlist)[:i], (*alienlist)[i+1:]...)
-									break
-								}
-							}
-							close(alien.Ws)
-							return
+					landingcity = citiesToMove[landingindex]
+				}
 
-						}
-						(*simulation)[landingcity] = append((*simulation)[landingcity], alien.Index)
-						alien.Totalmoves += 1
-						alien.Currentcity = landingcity
-						fmt.Printf("Alien: %v, current city is %v\n", alien.Index, alien.Currentcity)
-						SetState(*alienlist, 2)
-						alien.mu.Unlock()
-					} else {
-						for i, a := range *alienlist {
-							if a.Index == (*simulation)[landingcity][0] {
-								*alienlist = append((*alienlist)[:i], (*alienlist)[i+1:]...)
-								break
-							}
-						}
+				if len((*simulation)[landingcity]) < 1 {
+					if len((*simulation)[alien.Currentcity]) == 1 && (*simulation)[alien.Currentcity][0] == alien.Index {
+						(*simulation)[alien.Currentcity] = make([]int, 0)
+					}
+					if alien.Totalmoves > 10000 {
+						alien.Destroyed = true
 						for i, a := range *alienlist {
 							if a.Index == alien.Index {
 								*alienlist = append((*alienlist)[:i], (*alienlist)[i+1:]...)
 								break
 							}
 						}
-						alien.mu.Lock()
-						SetState(*alienlist, 1)
-						alien.DestroyCity(landingcity, worldmap, simulation, citylist)
-						SetState(*alienlist, 2)
 						close(alien.Ws)
-						alien.Destroyed = true
-						alien.mu.Unlock()
+						SetState(*alienlist, 2, alien.Index)
 						return
+
 					}
+					(*simulation)[landingcity] = append((*simulation)[landingcity], alien.Index)
+					alien.Totalmoves += 1
+					alien.Currentcity = landingcity
+					fmt.Printf("Alien: %v, current city is %v\n", alien.Index, alien.Currentcity)
+				} else {
+					for i, a := range *alienlist {
+						if a.Index == (*simulation)[landingcity][0] {
+							*alienlist = append((*alienlist)[:i], (*alienlist)[i+1:]...)
+							break
+						}
+					}
+					for i, a := range *alienlist {
+						if a.Index == alien.Index {
+							*alienlist = append((*alienlist)[:i], (*alienlist)[i+1:]...)
+							break
+						}
+					}
+					alien.DestroyCity(landingcity, worldmap, simulation, citylist, mutex)
+					close(alien.Ws)
+					alien.Destroyed = true
+					SetState(*alienlist, 2, alien.Index)
+					return
 				}
+				SetState(*alienlist, 2, alien.Index)
 			}
 		}
 	}
 
 }
 
-func (alien *Alien) DestroyCity(cityName string, worldmap *citymap.WorldMap, simulation *citymap.SimulationTrack, citylist *citymap.CityList) {
+func (alien *Alien) DestroyCity(cityName string, worldmap *citymap.WorldMap, simulation *citymap.SimulationTrack, citylist *citymap.CityList, mutex *sync.RWMutex) {
 	if len((*simulation)[cityName]) == 0 {
 		return
 	}
@@ -151,21 +151,26 @@ func (alien *Alien) DestroyCity(cityName string, worldmap *citymap.WorldMap, sim
 	}
 	delete(*worldmap, cityName)
 	delete(*simulation, cityName)
+	mutex.RLock()
 	for i, v := range *citylist {
 		if v == cityName {
 			*citylist = append((*citylist)[:i], (*citylist)[i+1:]...)
 			break
 		}
 	}
+	mutex.RUnlock()
 	fmt.Printf("%v has been destroyed by alien %v and alien %v!\n", cityName, existingAlien, alien.Index)
 }
 
-func SetState(aliens []*Alien, state int) {
+func SetState(aliens []*Alien, state int, sentBy int) {
 	defer func() {
 		// recover from panic if occured due to closed channel
 		_ = recover()
 	}()
 	for _, a := range aliens {
+		if a.Index == sentBy {
+			continue
+		}
 		if !a.Destroyed {
 			select {
 			case a.Ws <- state:

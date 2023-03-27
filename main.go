@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"sync"
 
@@ -10,7 +11,17 @@ import (
 )
 
 func main() {
-	cities, err := utils.ReadFile("./cityDetails.txt")
+	var (
+		inputFile string
+		numAlien  uint
+	)
+
+	flag.StringVar(&inputFile, "input", "", "input file containing world map details")
+	flag.UintVar(&numAlien, "N", 0, "number of aliens deployed for invasion")
+
+	flag.Parse()
+
+	cities, err := utils.ReadFile(inputFile)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -18,7 +29,11 @@ func main() {
 	citygraph, simulation, citylist := citymap.CreateCityGraph(cities)
 	alienList := make([](*alien.Alien), 0)
 	var mutex = &sync.RWMutex{}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < int(numAlien); i++ {
+		if len(citygraph) == 0 {
+			// no more cities left for invasion
+			break
+		}
 		wg.Add(1)
 		if len(citygraph) == 0 {
 			break
@@ -33,7 +48,6 @@ func main() {
 		alienList = append(alienList, alien)
 		go alien.AlienServiceWorker(&citygraph, &simulation, &citylist, &alienList, wg, mutex)
 	}
-	alien.SetState(alienList, 2)
 	wg.Wait()
 
 	s := ""
