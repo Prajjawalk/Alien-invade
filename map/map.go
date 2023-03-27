@@ -17,6 +17,7 @@ const (
 	West
 )
 
+// this function creates a city graph from the data read from input file
 func CreateCityGraph(cities []string) (WorldMap, SimulationTrack, CityList) {
 	worldmap := make(map[string][]string)
 	simulationTrack := make(map[string][]int)

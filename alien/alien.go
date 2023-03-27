@@ -26,6 +26,7 @@ const (
 	Running
 )
 
+// goroutine for the corresponding alien to move through the city graph
 func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *citymap.SimulationTrack, citylist *citymap.CityList, alienlist *[]*Alien, wg *sync.WaitGroup, mutex *sync.RWMutex) {
 	defer wg.Done()
 	state := Running // Begin in the running state.
@@ -47,9 +48,13 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 			}
 
 			for {
+				// we pause the movement of other aliens before making any move
 				SetState(*alienlist, 1, alien.Index)
 				rand.Seed(time.Now().UnixNano())
 				landingcity := ""
+
+				// The city gets allocated randomly to the alien just landed on world.
+				// If the alien's total moves > 0, then we fetch the list of connected cities to the current city and allocate city randomly from those connected cities
 				if alien.Totalmoves == 0 && alien.Currentcity == "" {
 					mutex.Lock()
 					totalcities := len(*citylist)
@@ -83,6 +88,7 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 						(*simulation)[alien.Currentcity] = make([]int, 0)
 					}
 					if alien.Totalmoves > 10000 {
+						// if more than 10000 moves are completed, stop the goroutine and destroy the alien
 						alien.Destroyed = true
 						for i, a := range *alienlist {
 							if a.Index == alien.Index {
@@ -99,6 +105,7 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 					alien.Totalmoves += 1
 					alien.Currentcity = landingcity
 				} else {
+					// when two aliens land on same city, both of them are destroyed along with the city
 					for i, a := range *alienlist {
 						if a.Index == (*simulation)[landingcity][0] {
 							*alienlist = append((*alienlist)[:i], (*alienlist)[i+1:]...)
@@ -125,6 +132,7 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 }
 
 func (alien *Alien) DestroyCity(cityName string, worldmap *citymap.WorldMap, simulation *citymap.SimulationTrack, citylist *citymap.CityList, mutex *sync.RWMutex) {
+	// when the city gets destroyed, remove the entry of city from the graph and all the links conneted to it
 	if len((*simulation)[cityName]) == 0 {
 		return
 	}
@@ -158,6 +166,7 @@ func (alien *Alien) DestroyCity(cityName string, worldmap *citymap.WorldMap, sim
 	fmt.Printf("%v has been destroyed by alien %v and alien %v!\n", cityName, existingAlien, alien.Index)
 }
 
+// fan out process which signals other alien goroutines to stop/pause/resume
 func SetState(aliens []*Alien, state int, sentBy int) {
 	defer func() {
 		// recover from panic if occured due to closed channel
