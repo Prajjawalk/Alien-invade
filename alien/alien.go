@@ -83,10 +83,13 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 					landingcity = citiesToMove[landingindex]
 				}
 
+				if len((*simulation)[alien.Currentcity]) == 1 && (*simulation)[alien.Currentcity][0] == alien.Index && !alien.Destroyed {
+					mutex.RLock()
+					(*simulation)[alien.Currentcity] = make([]int, 0)
+					mutex.RUnlock()
+				}
+
 				if len((*simulation)[landingcity]) < 1 {
-					if len((*simulation)[alien.Currentcity]) == 1 && (*simulation)[alien.Currentcity][0] == alien.Index {
-						(*simulation)[alien.Currentcity] = make([]int, 0)
-					}
 					if alien.Totalmoves > 10000 {
 						// if more than 10000 moves are completed, stop the goroutine and destroy the alien
 						alien.Destroyed = true
@@ -106,6 +109,9 @@ func (alien *Alien) AlienServiceWorker(worldmap *citymap.WorldMap, simulation *c
 					alien.Currentcity = landingcity
 				} else {
 					// when two aliens land on same city, both of them are destroyed along with the city
+					if len(*alienlist) == 0 {
+						return
+					}
 					for i, a := range *alienlist {
 						if a.Index == (*simulation)[landingcity][0] {
 							*alienlist = append((*alienlist)[:i], (*alienlist)[i+1:]...)
@@ -136,6 +142,7 @@ func (alien *Alien) DestroyCity(cityName string, worldmap *citymap.WorldMap, sim
 	if len((*simulation)[cityName]) == 0 {
 		return
 	}
+	mutex.Lock()
 	existingAlien := (*simulation)[cityName][0]
 	connectedcities := (*worldmap)[cityName]
 	for idx, city := range connectedcities {
@@ -155,6 +162,7 @@ func (alien *Alien) DestroyCity(cityName string, worldmap *citymap.WorldMap, sim
 	}
 	delete(*worldmap, cityName)
 	delete(*simulation, cityName)
+	mutex.Unlock()
 	mutex.RLock()
 	for i, v := range *citylist {
 		if v == cityName {
